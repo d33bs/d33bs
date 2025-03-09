@@ -2,4 +2,4 @@
 
 I'm a developer with a passion for software design, collaboration and innovation. Some of my interests include research data engineering, in-memory data flow, and scientific software.
 
-I've been on Github for 12 years. During that time I've contributed to 96 repositories, opened 550 issues, performed 479 code reviews, and have opened 647 pull requests.
+I've been on Github for 12 years. During that time I've contributed to 94 repositories, opened 550 issues, performed 480 code reviews, and have opened 647 pull requests.
