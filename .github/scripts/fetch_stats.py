@@ -1,20 +1,14 @@
 #!/usr/bin/env python3
 """Fetch PyPI package count, Zenodo archive count, and citation count, then update README.md."""
 
-import json
 import sys
-import urllib.error
-import urllib.request
+
+import requests
+from pyalex import Authors
 
 PYPI_PACKAGES_FILE = "pypi_packages.txt"
 ORCID = "0000-0001-6041-3665"
 README = "README.md"
-
-
-def fetch_json(url):
-    req = urllib.request.Request(url, headers={"User-Agent": "profile-stats-updater/1.0"})
-    with urllib.request.urlopen(req, timeout=15) as resp:
-        return json.loads(resp.read())
 
 
 def get_pypi_packages():
@@ -23,29 +17,29 @@ def get_pypi_packages():
         names = [line.strip() for line in f if line.strip() and not line.startswith("#")]
     count = 0
     for name in names:
-        try:
-            fetch_json(f"https://pypi.org/pypi/{name}/json")
+        resp = requests.get(f"https://pypi.org/pypi/{name}/json", timeout=15)
+        if resp.status_code == 200:
             count += 1
-        except urllib.error.HTTPError as e:
-            if e.code == 404:
-                print(f"  Warning: {name} not found on PyPI", file=sys.stderr)
-            else:
-                print(f"  Warning: {name} returned HTTP {e.code}", file=sys.stderr)
-        except Exception as e:
-            print(f"  Warning: {name} check failed: {e}", file=sys.stderr)
+        elif resp.status_code == 404:
+            print(f"  Warning: {name} not found on PyPI", file=sys.stderr)
+        else:
+            print(f"  Warning: {name} returned HTTP {resp.status_code}", file=sys.stderr)
     return count
 
 
 def get_zenodo_archives():
-    data = fetch_json(
-        f"https://zenodo.org/api/records?q=creators.orcid:{ORCID}&size=1"
+    resp = requests.get(
+        "https://zenodo.org/api/records",
+        params={"q": f"creators.orcid:{ORCID}", "size": 1},
+        timeout=15,
     )
-    return data["hits"]["total"]
+    resp.raise_for_status()
+    return resp.json()["hits"]["total"]
 
 
 def get_citation_count():
-    data = fetch_json(f"https://api.openalex.org/authors/orcid:{ORCID}")
-    return data["cited_by_count"]
+    author = Authors()["orcid:" + ORCID]
+    return author["cited_by_count"]
 
 
 def main():
