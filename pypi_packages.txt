@@ -2,7 +2,7 @@ almanack
 coSMicQC
 cytodataframe
 cytominer-database
-CytoTable
+cytotable
 iceberg-bioimage
 manubot
 manubot-ai-editor

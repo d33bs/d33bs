@@ -16,15 +16,15 @@ jobs:
       with:
         token: ${{ secrets.GHACTION }}
     - name: Install dependencies
-      run: pip install pyalex requests
+      run: pip install "pyalex==0.21" "requests==2.33.1"
     - name: Fetch external stats
       run: python3 .github/scripts/fetch_stats.py
     - name: Update README.md
       run: |
         if [[ "$(git status --porcelain)" != "" ]]; then
-        git config user.name github-actions[bot]
-        git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-        git add .
-        git commit -m "Update README with stats"
-        git push
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add .
+          git commit -m "Update README with stats"
+          git push
         fi

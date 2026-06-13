@@ -2,29 +2,36 @@
 """Fetch PyPI package count, Zenodo archive count, and citation count, then update README.md."""
 
 import sys
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
+import pyalex
 import requests
 from pyalex import Authors
+
+pyalex.config.email = "dave.bunten@cuanschutz.edu"
 
 PYPI_PACKAGES_FILE = "pypi_packages.txt"
 ORCID = "0000-0001-6041-3665"
 README = "README.md"
 
 
+def _check_pypi_package(name):
+    resp = requests.get(f"https://pypi.org/pypi/{name}/json", timeout=15)
+    if resp.status_code == 200:
+        return True
+    if resp.status_code == 404:
+        print(f"  Warning: {name} not found on PyPI", file=sys.stderr)
+    else:
+        print(f"  Warning: {name} returned HTTP {resp.status_code}", file=sys.stderr)
+    return False
+
+
 def get_pypi_packages():
-    """Count packages listed in pypi_packages.txt that exist on PyPI."""
     with open(PYPI_PACKAGES_FILE) as f:
         names = [line.strip() for line in f if line.strip() and not line.startswith("#")]
-    count = 0
-    for name in names:
-        resp = requests.get(f"https://pypi.org/pypi/{name}/json", timeout=15)
-        if resp.status_code == 200:
-            count += 1
-        elif resp.status_code == 404:
-            print(f"  Warning: {name} not found on PyPI", file=sys.stderr)
-        else:
-            print(f"  Warning: {name} returned HTTP {resp.status_code}", file=sys.stderr)
-    return count
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        futures = {pool.submit(_check_pypi_package, name): name for name in names}
+        return sum(1 for f in as_completed(futures) if f.result())
 
 
 def get_zenodo_archives():
@@ -42,25 +49,31 @@ def get_citation_count():
     return author["cited_by_count"]
 
 
+def fetch_stat(label, fn):
+    try:
+        value = fn()
+        print(f"  {label}: {value}")
+        return value
+    except Exception as e:
+        print(f"  Warning: could not fetch {label}: {e}", file=sys.stderr)
+        return None
+
+
 def main():
-    print("Fetching PyPI package count...")
-    pypi = get_pypi_packages()
-    print(f"  PyPI packages: {pypi}")
-
-    print("Fetching Zenodo archive count...")
-    zenodo = get_zenodo_archives()
-    print(f"  Zenodo archives: {zenodo}")
-
-    print("Fetching citation count...")
-    citations = get_citation_count()
-    print(f"  Citations: {citations}")
+    print("Fetching stats...")
+    pypi = fetch_stat("PyPI packages", get_pypi_packages)
+    zenodo = fetch_stat("Zenodo archives", get_zenodo_archives)
+    citations = fetch_stat("Citations", get_citation_count)
 
     with open(README) as f:
         content = f.read()
 
-    content = content.replace("{{ PYPI_PACKAGES }}", str(pypi))
-    content = content.replace("{{ ZENODO_ARCHIVES }}", str(zenodo))
-    content = content.replace("{{ CITATION_COUNT }}", str(citations))
+    if pypi is not None:
+        content = content.replace("{{ PYPI_PACKAGES }}", str(pypi))
+    if zenodo is not None:
+        content = content.replace("{{ ZENODO_ARCHIVES }}", str(zenodo))
+    if citations is not None:
+        content = content.replace("{{ CITATION_COUNT }}", str(citations))
 
     with open(README, "w") as f:
         f.write(content)
