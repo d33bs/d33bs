@@ -1,6 +1,5 @@
 almanack
 coSMicQC
-cytodataframe
 cytominer-database
 cytotable
 iceberg-bioimage

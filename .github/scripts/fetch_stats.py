@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-"""Fetch PyPI package count, Zenodo archive count, and citation count, then update README.md."""
+"""Fetch PyPI package count, downloads, Zenodo archive count, and citation count, then update README.md."""
 
 import sys
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import pyalex
@@ -26,12 +27,33 @@ def _check_pypi_package(name):
     return False
 
 
-def get_pypi_packages():
+def _get_pypi_downloads(name):
+    resp = requests.get(f"https://pypistats.org/api/packages/{name}/recent", timeout=15)
+    if resp.status_code == 200:
+        return resp.json()["data"]["last_month"]
+    print(f"  Warning: could not fetch downloads for {name} (HTTP {resp.status_code})", file=sys.stderr)
+    return 0
+
+
+def _load_package_names():
     with open(PYPI_PACKAGES_FILE) as f:
-        names = [line.strip() for line in f if line.strip() and not line.startswith("#")]
+        return [line.strip() for line in f if line.strip() and not line.startswith("#")]
+
+
+def get_pypi_packages():
+    names = _load_package_names()
     with ThreadPoolExecutor(max_workers=8) as pool:
         futures = {pool.submit(_check_pypi_package, name): name for name in names}
         return sum(1 for f in as_completed(futures) if f.result())
+
+
+def get_pypi_downloads():
+    names = _load_package_names()
+    total = 0
+    for name in names:
+        total += _get_pypi_downloads(name)
+        time.sleep(0.5)
+    return total
 
 
 def get_zenodo_archives():
@@ -62,6 +84,7 @@ def fetch_stat(label, fn):
 def main():
     print("Fetching stats...")
     pypi = fetch_stat("PyPI packages", get_pypi_packages)
+    downloads = fetch_stat("PyPI downloads (last month)", get_pypi_downloads)
     zenodo = fetch_stat("Zenodo archives", get_zenodo_archives)
     citations = fetch_stat("Citations", get_citation_count)
 
@@ -70,6 +93,8 @@ def main():
 
     if pypi is not None:
         content = content.replace("{{ PYPI_PACKAGES }}", str(pypi))
+    if downloads is not None:
+        content = content.replace("{{ PYPI_DOWNLOADS }}", f"{downloads:,}")
     if zenodo is not None:
         content = content.replace("{{ ZENODO_ARCHIVES }}", str(zenodo))
     if citations is not None:
