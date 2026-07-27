@@ -3,7 +3,8 @@
 
 import sys
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
+import xmlrpc.client
+from functools import lru_cache
 
 import pyalex
 import requests
@@ -11,20 +12,11 @@ from pyalex import Authors
 
 pyalex.config.email = "dave.bunten@cuanschutz.edu"
 
+PYPI_USER = "d33bs"
 PYPI_PACKAGES_FILE = "pypi_packages.txt"
+USER_AGENT = "d33bs-profile-readme (dave.bunten@cuanschutz.edu)"
 ORCID = "0000-0001-6041-3665"
 README = "README.md"
-
-
-def _check_pypi_package(name):
-    resp = requests.get(f"https://pypi.org/pypi/{name}/json", timeout=15)
-    if resp.status_code == 200:
-        return True
-    if resp.status_code == 404:
-        print(f"  Warning: {name} not found on PyPI", file=sys.stderr)
-    else:
-        print(f"  Warning: {name} returned HTTP {resp.status_code}", file=sys.stderr)
-    return False
 
 
 def _get_pypi_downloads(name):
@@ -35,22 +27,70 @@ def _get_pypi_downloads(name):
     return 0
 
 
-def _load_package_names():
+def _fetch_package_names():
+    """Fetch the user's packages via PyPI's XML-RPC ``user_packages`` method.
+
+    Returns the name of every project the user owns or maintains. The HTML
+    profile page (https://pypi.org/user/<user>/) sits behind bot mitigation
+    and can't be scraped from CI, so XML-RPC is the reliable machine-readable
+    source. It is deprecated-but-live; the cached-file fallback in
+    ``_load_package_names`` covers the day PyPI turns it off.
+    """
+    body = xmlrpc.client.dumps((PYPI_USER,), "user_packages")
+    resp = requests.post(
+        "https://pypi.org/pypi",
+        data=body,
+        headers={"Content-Type": "text/xml", "User-Agent": USER_AGENT},
+        timeout=15,
+    )
+    resp.raise_for_status()
+    (roles,), _method = xmlrpc.client.loads(resp.content)
+    return [name for _role, name in roles]
+
+
+def _read_cache():
     with open(PYPI_PACKAGES_FILE) as f:
         return [line.strip() for line in f if line.strip() and not line.startswith("#")]
 
 
+def _write_cache(names):
+    with open(PYPI_PACKAGES_FILE, "w") as f:
+        f.write("# Auto-generated fallback cache of d33bs's PyPI packages.\n")
+        f.write("# Refreshed by .github/scripts/fetch_stats.py on each run; do not edit by hand.\n")
+        for name in names:
+            f.write(name + "\n")
+
+
+@lru_cache(maxsize=1)
+def _load_package_names():
+    """Return the user's PyPI package names.
+
+    Fetches the live list from PyPI and refreshes the on-disk cache. Falls
+    back to that cache if the fetch fails or returns nothing, so a transient
+    PyPI outage never blanks the README stats.
+    """
+    try:
+        names = _fetch_package_names()
+    except Exception as e:
+        print(f"  Warning: could not fetch PyPI packages: {e}", file=sys.stderr)
+        names = []
+
+    if names:
+        names = sorted(names)
+        _write_cache(names)
+        return names
+
+    print("  Falling back to cached package list.", file=sys.stderr)
+    return _read_cache()
+
+
 def get_pypi_packages():
-    names = _load_package_names()
-    with ThreadPoolExecutor(max_workers=8) as pool:
-        futures = {pool.submit(_check_pypi_package, name): name for name in names}
-        return sum(1 for f in as_completed(futures) if f.result())
+    return len(_load_package_names())
 
 
 def get_pypi_downloads():
-    names = _load_package_names()
     total = 0
-    for name in names:
+    for name in _load_package_names():
         total += _get_pypi_downloads(name)
         time.sleep(0.5)
     return total
@@ -67,8 +107,13 @@ def get_zenodo_archives():
 
 
 def get_citation_count():
-    author = Authors()["orcid:" + ORCID]
-    return author["cited_by_count"]
+    # OpenAlex frequently splits one ORCID across several author entities
+    # (this ORCID currently has 5), and the /authors/orcid: resolver may
+    # return a sparse duplicate with 0 citations. Sum cited_by_count across
+    # every entity carrying the ORCID instead; each work counts toward
+    # exactly one entity, so there is no double-counting.
+    authors = Authors().filter(orcid=ORCID).get()
+    return sum(a["cited_by_count"] for a in authors)
 
 
 def fetch_stat(label, fn):
