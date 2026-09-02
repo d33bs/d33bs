@@ -1,6 +1,6 @@
 ### Hi, I'm Dave 👋
 
-I'm a research software engineer building open-source tools for scientific discovery, with a focus on bioimaging, single-cell analysis, and sustainable software practices.
+I'm a software engineer and technical leader focused on open-source data infrastructure, analytical systems, and software for complex scientific data.
 
 I've been on Github for {{ ACCOUNT_AGE }} years. During that time I've contributed to {{ REPOSITORIES_CONTRIBUTED_TO }} repositories, opened {{ ISSUES }} issues, performed {{ CODE_REVIEWS }} code reviews, and have opened {{ PULL_REQUESTS }} pull requests.
 
