@@ -3,6 +3,7 @@
 almanack
 arrow-lint
 cosmicqc
+cp-anywhere
 cytodataframe
 cytominer-database
 cytotable
